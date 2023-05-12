@@ -19,6 +19,7 @@ import pickle
 from eth_abi import decode, encode
 from Order import Order
 from OrderBook import OrderBook 
+from Portfolio import Portfolio
 
 logging.basicConfig(level="INFO")
 logger = logging.getLogger(__name__)
@@ -46,6 +47,16 @@ def load_book():
     return order_book
 
 
+def save_portfolio(portfolio):
+    pickle_file = open("portfolio", "wb")
+    pickle.dump(portfolio, pickle_file)
+    pickle_file.close()
+
+def load_portfolio():
+    pickle_file = open('portfolio', 'rb')
+    portfolio = pickle.load(pickle_file)
+    pickle_file.close()
+    return portfolio
 
 def hex2str(hex):
     """
@@ -59,7 +70,7 @@ def str2hex(str):
     """
     return "0x" + str.encode("utf-8").hex()
 
-def handle_deposit_money(payload, sender, timestamp):
+def handle_deposit_money(portfolio, payload, sender):
     print(f"Received deposit request {payload}")
 
     try:
@@ -67,8 +78,10 @@ def handle_deposit_money(payload, sender, timestamp):
         # which is where all deposits must come from
         if sender != rollup_address:
             result = {'error': 'Input does not come from the Portal'}
-            save_notification(sender, NOTIFICATION_ACTIONS['SYSTEM'], {}, timestamp, result)
-            return reject_input(json.dumps(result), payload)
+            print(result)
+            #save_notification(sender, NOTIFICATION_ACTIONS['SYSTEM'], {}, timestamp, result)
+            #return reject_input(json.dumps(result), payload)
+            return "reject"
 
         # Attempt to decode input as an ABI-encoded ERC20 deposit
         binary = bytes.fromhex(payload[2:])
@@ -78,15 +91,18 @@ def handle_deposit_money(payload, sender, timestamp):
             print(e)
             result = {'error': "Payload does not conform to ERC20 deposit ABI"}
             print(result)
-            save_notification(sender, NOTIFICATION_ACTIONS['SYSTEM'], {}, timestamp, result)
-            return reject_input(json.dumps(result), payload)
+            #save_notification(sender, NOTIFICATION_ACTIONS['SYSTEM'], {}, timestamp, result)
+            #return reject_input(json.dumps(result), payload)
+            return "reject"
 
         # Check if the header matches the Keccak256-encoded string "ERC20_Transfer"
         input_header = decoded[0]
         if input_header != ERC20_TRANSFER_HEADER:
             result = {'error': 'Input header is not from an ERC20 transfer'}
-            save_notification(sender, NOTIFICATION_ACTIONS['SYSTEM'], {}, timestamp, result)
-            return reject_input(json.dumps(result), payload)
+            print(result)
+            #save_notification(sender, NOTIFICATION_ACTIONS['SYSTEM'], {}, timestamp, result)
+            #return reject_input(json.dumps(result), payload)
+            return "reject"
 
         user = decoded[1]
         erc20_contract = decoded[2]
@@ -95,7 +111,7 @@ def handle_deposit_money(payload, sender, timestamp):
         result = {'message': f"Deposit received from: {user}; ERC-20: {erc20_contract}; Amount: {amount}"}
         print(f"Adding notice: {json.dumps(result)}")
 
-        if not can_deposit_token(erc20_contract):
+        """ if not can_deposit_token(erc20_contract):
             print(f"Token is not acceptable, sending them back")
             handle_withdraw_money(user, amount, erc20_contract)
             result = {'error': "Token is not acceptable, we are sending them back to you as voucher!"}
@@ -107,21 +123,29 @@ def handle_deposit_money(payload, sender, timestamp):
                 result
             )
             reject_input('Invalid token', json.dumps(result))
-            return consts.ACCEPT_STATUS
+            return consts.ACCEPT_STATUS """
 
-        add_deposit_user(user, amount / BASE_AMOUNT, erc20_contract, timestamp)
-        add_notice(json.dumps(result))
-        save_notification(
+        token = "ask" # every token is ask for mocking
+
+        if (erc20_contract == "0x610178da211fef7d417bc0e6fed39f05609ad788"): # only cartesi is bid
+            token = "bid"
+
+        portfolio.update_balance(user, "bid", amount, amount)
+        print(portfolio.get_balance(user, "bid"))
+        # TODO: add_notice(json.dumps(result))
+        """ save_notification(
             user,
             NOTIFICATION_ACTIONS['DEPOSIT'],
             {'amount': amount, 'token': erc20_contract},
             timestamp,
             result
-        )
-        return consts.ACCEPT_STATUS
+        ) """
+
+        save_portfolio(portfolio)
+        return "accept"
     except Exception as e:
-        print(e)
-        return reject_input(f"Error processing data{payload}", payload)
+        print("Exception in deposit", e)
+        return "reject"
 
 def handle_withdraw_money(user, amount, token):
     # Encode a transfer function call that returns the amount back to the depositor
@@ -147,12 +171,20 @@ def reject_input(msg, payload):
 def handle_advance(data):
     logger.info(f"Received advance request data {data}")
 
+
+    """ portfolio = Portfolio()
+    order_book = OrderBook()
+    save_portfolio(portfolio)
+    save_book(order_book) """
+    portfolio = load_portfolio()
+    order_book = load_book()
+
     try:
         payload = bytes.fromhex(data["payload"][2:]).decode()
-        print(payload)
     except Exception as e:
         print(e)
-        return handle_deposit_money(data["payload"], data['metadata']['msg_sender'], timestamp)
+        save_book(order_book)
+        return handle_deposit_money(portfolio, data["payload"], data['metadata']['msg_sender'])
 
     user = data['metadata']['msg_sender']
 
@@ -162,29 +194,54 @@ def handle_advance(data):
     except Exception as e:
         print("data not json", e)
         return "reject"
-
-    order_book = load_book()
     
     print(payload)
+    user = data['metadata']['msg_sender']
     match payload['action']:
         case "add_order":
-            # TODO: generate incremental id from orderBook structure
+            quantity = payload['quantity']
+            side = payload['side']
+            user_balance = portfolio.get_balance(user, side)
+
+            if user_balance == None or user_balance["available"] < quantity:
+                print("not enough funds")
+                return "reject"
+
             order = Order(
-                0,
-                data['metadata']['msg_sender'], 
-                payload['side'], 
+                order_book.get_order_id(),
+                user, 
+                side,
                 payload['price'],
-                payload['quantity']
+                quantity
             )
-            print("add order", order)
-            order_book.add_order(order)
-            print(order_book.view_book())
-            result = "ok"
+
+            print("add order", order.id)
+            order = order_book.add_order(order)
+            print("Before balance", portfolio.get_balance(user,side))
+            portfolio.update_balance(user, side, 0, -1 * order.quantity)
+            print("After balance", portfolio.get_balance(user,side))
         case "cancel_order":
-            print("cancel order")
-            result = "ok"
+            order_id = payload['order_id']
+            order = None
+            try:
+                order = order_book.get_order(order_id)
+            except:
+                print("order not found")
+                return "reject"
+            
+            if order == None:
+                print("order not found")
+                return "reject"
+
+            if order.owner != user:
+                print("not owner of order")
+                return "reject"
+            
+            order_book.cancel_order(order_id)
+            print("order cancelled")
 
     save_book(order_book)
+    save_portfolio(portfolio)
 
     status = "accept"
     try:
@@ -214,7 +271,7 @@ handlers = {
 }
 
 finish = {"status": "accept"}
-rollup_address = None
+rollup_address = "0xf8c694fd58360de278d5ff2276b7130bfdc0192a"
 
 while True:
     logger.info("Sending finish")

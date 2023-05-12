@@ -5,6 +5,15 @@ class OrderBook:
     def __init__(self):
         self.bids = {}
         self.asks = {}
+        self.orders = {}
+        self.last_order_id = -1
+
+    def get_order_id(self):
+        self.last_order_id += 1
+        return self.last_order_id
+
+    def get_order(self, order_id):
+        return self.orders[order_id]
 
     def match_order(self, new_order):
         if new_order.type == 'bid':
@@ -22,6 +31,7 @@ class OrderBook:
                             new_order.quantity = 0
                     if not self.asks[price]:
                         del self.asks[price]
+
         elif new_order.type == 'ask':
             for price in sorted(self.bids.keys(), reverse=True):
                 if price >= new_order.price:
@@ -53,6 +63,9 @@ class OrderBook:
                 else:
                     self.asks[order.price] = [order]
                 self.asks[order.price].sort(key=lambda x: x.timestamp)
+            
+            self.orders[order.id] = order
+            return order
 
     def remove_order(self, order):
         if order.type == 'bid':
@@ -65,6 +78,20 @@ class OrderBook:
                 self.asks[order.price].remove(order)
                 if not self.asks[order.price]:
                     del self.asks[order.price]
+
+    def cancel_order(self, id):
+        for price in self.bids.keys():
+            for order in self.bids[price]:
+                if order.id == id:
+                    self.remove_order(order)
+                    return True
+        for price in self.asks.keys():
+            for order in self.asks[price]:
+                if order.id == id:
+                    self.remove_order(order)
+                    return True
+        
+        return False
                     
     def view_book(self):
             print('Bids:')
