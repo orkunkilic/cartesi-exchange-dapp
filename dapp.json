@@ -1,0 +1,5 @@
+{
+  "fs": {
+    "files": ["order-book-exchange.py", "entrypoint.sh"]
+  }
+}
