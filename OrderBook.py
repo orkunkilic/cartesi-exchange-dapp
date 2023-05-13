@@ -1,16 +1,26 @@
 import time
 import Order
+import json
+from helpers import add_report
 
 class OrderBook:
-    def __init__(self):
+    def __init__(self, portfolio):
         self.bids = {}
         self.asks = {}
         self.orders = {}
         self.last_order_id = -1
+        self.portfolio = portfolio
+
+        # last_event_id -> not belong to here but convenience > dx :)
+        self.last_event_id = -1
 
     def get_order_id(self):
         self.last_order_id += 1
         return self.last_order_id
+
+    def get_last_event_id(self):
+        self.last_event_id += 1
+        return self.last_event_id
 
     def get_order(self, order_id):
         return self.orders[order_id]
@@ -23,14 +33,20 @@ class OrderBook:
                         if new_order.quantity <= 0:
                             return
                         if new_order.quantity >= order.quantity:
+                            executed_quantity = order.quantity
                             new_order.quantity -= order.quantity
                             order.quantity = 0
                             self.remove_order(order)
                         else:
+                            executed_quantity = new_order.quantity
                             order.quantity -= new_order.quantity
                             new_order.quantity = 0
-                    if not self.asks[price]:
-                        del self.asks[price]
+
+                        # Update portfolio
+                        self.portfolio.update_balance(new_order.owner, 'bid', -executed_quantity, -executed_quantity)
+                        self.portfolio.update_balance(new_order.owner, 'ask', executed_quantity * price, executed_quantity * price)
+                        self.portfolio.update_balance(order.owner, 'bid', executed_quantity, executed_quantity)
+                        self.portfolio.update_balance(order.owner, 'ask', -executed_quantity * price, -executed_quantity * price)
 
         elif new_order.type == 'ask':
             for price in sorted(self.bids.keys(), reverse=True):
@@ -39,17 +55,33 @@ class OrderBook:
                         if new_order.quantity <= 0:
                             return
                         if new_order.quantity >= order.quantity:
+                            executed_quantity = order.quantity
                             new_order.quantity -= order.quantity
                             order.quantity = 0
                             self.remove_order(order)
                         else:
+                            executed_quantity = new_order.quantity
                             order.quantity -= new_order.quantity
                             new_order.quantity = 0
+
+                        # Update portfolio
+                        self.portfolio.update_balance(new_order.owner, 'bid', executed_quantity, executed_quantity)
+                        self.portfolio.update_balance(new_order.owner, 'ask', -executed_quantity * price, -executed_quantity * price)
+                        self.portfolio.update_balance(order.owner, 'bid', -executed_quantity, -executed_quantity)
+                        self.portfolio.update_balance(order.owner, 'ask', executed_quantity * price, executed_quantity * price)
+
                     if not self.bids[price]:
                         del self.bids[price]
 
     def add_order(self, order):
+        # When an order is added, reserve the relevant quantity of tokens in the user's portfolio
+        if order.type == 'bid':
+            self.portfolio.update_balance(order.owner, 'bid', 0, -order.quantity)
+        elif order.type == 'ask':
+            self.portfolio.update_balance(order.owner, 'ask', 0, -order.quantity * order.price)
+
         self.match_order(order)
+
         if order.quantity > 0:
             if order.type == 'bid':
                 if order.price in self.bids:
@@ -65,9 +97,25 @@ class OrderBook:
                 self.asks[order.price].sort(key=lambda x: x.timestamp)
             
             self.orders[order.id] = order
+            add_report({
+                "class": "ORDER_BOOK",
+                "id": self.get_last_event_id(),
+                "type": "ADD_ORDER",
+                "order_id": order.id,
+                "order_owner": order.owner,
+                "order_type": order.type,
+                "order_price": order.price,
+                "order_quantity": order.quantity
+            })
             return order
 
     def remove_order(self, order):
+        # When an order is removed, unreserve the relevant quantity of tokens in the user's portfolio
+        if order.type == 'bid':
+            self.portfolio.update_balance(order.owner, 'token1', 0, order.quantity)
+        elif order.type == 'ask':
+            self.portfolio.update_balance(order.owner, 'token2', 0, order.quantity * order.price)
+
         if order.type == 'bid':
             if order in self.bids[order.price]:
                 self.bids[order.price].remove(order)
@@ -78,6 +126,17 @@ class OrderBook:
                 self.asks[order.price].remove(order)
                 if not self.asks[order.price]:
                     del self.asks[order.price]
+        
+        add_report({
+            "class": "ORDER_BOOK",
+            "id": self.get_last_event_id(),
+            "type": "REMOVE_ORDER",
+            "order_id": order.id,
+            "order_owner": order.owner,
+            "order_type": order.type,
+            "order_price": order.price,
+            "order_quantity": order.quantity
+        })
 
     def cancel_order(self, id):
         for price in self.bids.keys():

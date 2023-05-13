@@ -46,7 +46,6 @@ def load_book():
     pickle_file.close()
     return order_book
 
-
 def save_portfolio(portfolio):
     pickle_file = open("portfolio", "wb")
     pickle.dump(portfolio, pickle_file)
@@ -70,7 +69,7 @@ def str2hex(str):
     """
     return "0x" + str.encode("utf-8").hex()
 
-def handle_deposit_money(portfolio, payload, sender):
+def handle_deposit_money(order_book, payload, sender):
     print(f"Received deposit request {payload}")
 
     try:
@@ -130,8 +129,8 @@ def handle_deposit_money(portfolio, payload, sender):
         if (erc20_contract == "0x610178da211fef7d417bc0e6fed39f05609ad788"): # only cartesi is bid
             token = "bid"
 
-        portfolio.update_balance(user, "bid", amount, amount)
-        print(portfolio.get_balance(user, "bid"))
+        order_book.portfolio.update_balance(user, "bid", amount, amount)
+        print(order_book.portfolio.get_balance(user, "bid"))
         # TODO: add_notice(json.dumps(result))
         """ save_notification(
             user,
@@ -141,7 +140,7 @@ def handle_deposit_money(portfolio, payload, sender):
             result
         ) """
 
-        save_portfolio(portfolio)
+        save_book(order_book)
         return "accept"
     except Exception as e:
         print("Exception in deposit", e)
@@ -160,31 +159,19 @@ def handle_withdraw_money(user, amount, token):
     res = requests.post(rollup_server + "/voucher", json=voucher)
     logger.info(f"Received voucher status {res.status_code} body {res.content}")
 
-
-def reject_input(msg, payload):
-    print(f"Reject input {msg}")
-    add_report(payload, consts.REJECT_STATUS)
-    return consts.REJECT_STATUS
-
-
-
 def handle_advance(data):
     logger.info(f"Received advance request data {data}")
 
-
     """ portfolio = Portfolio()
-    order_book = OrderBook()
-    save_portfolio(portfolio)
+    order_book = OrderBook(portfolio)
     save_book(order_book) """
-    portfolio = load_portfolio()
     order_book = load_book()
 
     try:
         payload = bytes.fromhex(data["payload"][2:]).decode()
     except Exception as e:
         print(e)
-        save_book(order_book)
-        return handle_deposit_money(portfolio, data["payload"], data['metadata']['msg_sender'])
+        return handle_deposit_money(order_book, data["payload"], data['metadata']['msg_sender'])
 
     user = data['metadata']['msg_sender']
 
@@ -201,7 +188,7 @@ def handle_advance(data):
         case "add_order":
             quantity = payload['quantity']
             side = payload['side']
-            user_balance = portfolio.get_balance(user, side)
+            user_balance = order_book.portfolio.get_balance(user, side)
 
             if user_balance == None or user_balance["available"] < quantity:
                 print("not enough funds")
@@ -216,10 +203,9 @@ def handle_advance(data):
             )
 
             print("add order", order.id)
+            print("Before balance", order_book.portfolio.get_balance(user,side))
             order = order_book.add_order(order)
-            print("Before balance", portfolio.get_balance(user,side))
-            portfolio.update_balance(user, side, 0, -1 * order.quantity)
-            print("After balance", portfolio.get_balance(user,side))
+            print("After balance", order_book.portfolio.get_balance(user,side))
         case "cancel_order":
             order_id = payload['order_id']
             order = None
@@ -241,7 +227,6 @@ def handle_advance(data):
             print("order cancelled")
 
     save_book(order_book)
-    save_portfolio(portfolio)
 
     status = "accept"
     try:
@@ -271,7 +256,7 @@ handlers = {
 }
 
 finish = {"status": "accept"}
-rollup_address = "0xf8c694fd58360de278d5ff2276b7130bfdc0192a"
+rollup_address = None
 
 while True:
     logger.info("Sending finish")

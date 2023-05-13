@@ -12,4 +12,4 @@
 # specific language governing permissions and limitations under the License.
 
 set -e
-rollup-init python3 order-book-exchange.py
+rollup-init python3 exchange.py

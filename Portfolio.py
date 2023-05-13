@@ -1,7 +1,14 @@
+from helpers import add_report
+
 class Portfolio:
     def __init__(self):
         # Dictionary of user balances. Each user balance is a dictionary that maps token names to balance.
         self.balances = {}
+        self.last_event_id = -1
+
+    def get_last_event_id(self):
+        self.last_event_id += 1
+        return self.last_event_id
 
     def update_balance(self, user_id, token, total_change, available_change):
         if user_id not in self.balances:
@@ -13,5 +20,14 @@ class Portfolio:
         self.balances[user_id][token]['total'] += total_change
         self.balances[user_id][token]['available'] += available_change
 
+        add_report({
+            "class": "PORTFOLIO",
+            "id": self.get_last_event_id(),
+            "type": "BALANCE_UPDATED",
+            "user": user_id,
+            "token": token,
+            "total": self.balances[user_id][token]['total'],
+            "available": self.balances[user_id][token]['available']
+        })
     def get_balance(self, user_id, token):
         return self.balances.get(user_id, {}).get(token, None)
