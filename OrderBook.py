@@ -33,20 +33,16 @@ class OrderBook:
                         if new_order.quantity <= 0:
                             return
                         if new_order.quantity >= order.quantity:
+                            print("match", new_order.quantity, order.quantity)
                             executed_quantity = order.quantity
                             new_order.quantity -= order.quantity
                             order.quantity = 0
-                            self.remove_order(order)
+                            self.remove_order(order, True)
                         else:
+                            print("match", new_order.id, order.id)
                             executed_quantity = new_order.quantity
                             order.quantity -= new_order.quantity
                             new_order.quantity = 0
-
-                        # Update portfolio
-                        self.portfolio.update_balance(new_order.owner, 'bid', -executed_quantity, -executed_quantity)
-                        self.portfolio.update_balance(new_order.owner, 'ask', executed_quantity * price, executed_quantity * price)
-                        self.portfolio.update_balance(order.owner, 'bid', executed_quantity, executed_quantity)
-                        self.portfolio.update_balance(order.owner, 'ask', -executed_quantity * price, -executed_quantity * price)
 
         elif new_order.type == 'ask':
             for price in sorted(self.bids.keys(), reverse=True):
@@ -55,23 +51,19 @@ class OrderBook:
                         if new_order.quantity <= 0:
                             return
                         if new_order.quantity >= order.quantity:
+                            print("match", new_order.quantity, order.quantity)
                             executed_quantity = order.quantity
                             new_order.quantity -= order.quantity
-                            order.quantity = 0
-                            self.remove_order(order)
+                            self.remove_order(order, True)
+                            # TODO: update balance of new_order.owner
                         else:
+                            print("match", new_order.id, order.id)
                             executed_quantity = new_order.quantity
                             order.quantity -= new_order.quantity
                             new_order.quantity = 0
 
-                        # Update portfolio
-                        self.portfolio.update_balance(new_order.owner, 'bid', executed_quantity, executed_quantity)
-                        self.portfolio.update_balance(new_order.owner, 'ask', -executed_quantity * price, -executed_quantity * price)
-                        self.portfolio.update_balance(order.owner, 'bid', -executed_quantity, -executed_quantity)
-                        self.portfolio.update_balance(order.owner, 'ask', executed_quantity * price, executed_quantity * price)
-
-                    if not self.bids[price]:
-                        del self.bids[price]
+                    """ if not self.bids[price]:
+                        del self.bids[price] """
 
     def add_order(self, order):
         # When an order is added, reserve the relevant quantity of tokens in the user's portfolio
@@ -81,6 +73,8 @@ class OrderBook:
             self.portfolio.update_balance(order.owner, 'ask', 0, -order.quantity * order.price)
 
         self.match_order(order)
+
+        print("left quantity after match", order.quantity)
 
         if order.quantity > 0:
             if order.type == 'bid':
@@ -109,12 +103,18 @@ class OrderBook:
             })
             return order
 
-    def remove_order(self, order):
+    def remove_order(self, order, match = False):
         # When an order is removed, unreserve the relevant quantity of tokens in the user's portfolio
         if order.type == 'bid':
-            self.portfolio.update_balance(order.owner, 'token1', 0, order.quantity)
+            if match:
+                self.portfolio.update_balance(order.owner, 'bid', order.quantity, order.quantity)
+            else:
+                self.portfolio.update_balance(order.owner, 'bid', 0, order.quantity)
         elif order.type == 'ask':
-            self.portfolio.update_balance(order.owner, 'token2', 0, order.quantity * order.price)
+            if match:
+                self.portfolio.update_balance(order.owner, 'ask', order.quantity * order.price, order.quantity * order.price)
+            else:
+                self.portfolio.update_balance(order.owner, 'ask', 0, order.quantity * order.price)
 
         if order.type == 'bid':
             if order in self.bids[order.price]:

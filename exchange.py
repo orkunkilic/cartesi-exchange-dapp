@@ -129,8 +129,8 @@ def handle_deposit_money(order_book, payload, sender):
         if (erc20_contract == "0x610178da211fef7d417bc0e6fed39f05609ad788"): # only cartesi is bid
             token = "bid"
 
-        order_book.portfolio.update_balance(user, "bid", amount, amount)
-        print(order_book.portfolio.get_balance(user, "bid"))
+        order_book.portfolio.update_balance(user, token, amount, amount)
+        print(order_book.portfolio.get_balance(user, token))
         # TODO: add_notice(json.dumps(result))
         """ save_notification(
             user,
@@ -159,12 +159,13 @@ def handle_withdraw_money(user, amount, token):
     res = requests.post(rollup_server + "/voucher", json=voucher)
     logger.info(f"Received voucher status {res.status_code} body {res.content}")
 
+""" portfolio = Portfolio()
+order_book = OrderBook(portfolio)
+save_book(order_book)
+ """
 def handle_advance(data):
     logger.info(f"Received advance request data {data}")
 
-    """ portfolio = Portfolio()
-    order_book = OrderBook(portfolio)
-    save_book(order_book) """
     order_book = load_book()
 
     try:
@@ -183,6 +184,7 @@ def handle_advance(data):
         return "reject"
     
     print(payload)
+    order_book.view_book()
     user = data['metadata']['msg_sender']
     match payload['action']:
         case "add_order":
@@ -256,7 +258,7 @@ handlers = {
 }
 
 finish = {"status": "accept"}
-rollup_address = None
+rollup_address = "0xf8c694fd58360de278d5ff2276b7130bfdc0192a"
 
 while True:
     logger.info("Sending finish")

@@ -17,17 +17,19 @@ class Portfolio:
         if token not in self.balances[user_id]:
             self.balances[user_id][token] = {'total': 0, 'available': 0}
 
-        self.balances[user_id][token]['total'] += total_change
-        self.balances[user_id][token]['available'] += available_change
+        self.balances[user_id][token]['total'] += int(total_change)
+        self.balances[user_id][token]['available'] += int(available_change)
 
+        print(self.balances[user_id][token]['total'])
+        print(self.balances[user_id][token]['available'])
         add_report({
             "class": "PORTFOLIO",
             "id": self.get_last_event_id(),
             "type": "BALANCE_UPDATED",
             "user": user_id,
             "token": token,
-            "total": self.balances[user_id][token]['total'],
-            "available": self.balances[user_id][token]['available']
+            "total": str(self.balances[user_id][token]['total']),
+            "available": str(self.balances[user_id][token]['available'])
         })
     def get_balance(self, user_id, token):
         return self.balances.get(user_id, {}).get(token, None)
