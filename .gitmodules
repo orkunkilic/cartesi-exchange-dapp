@@ -1,0 +1,7 @@
+
+[submodule "cartesi-exchange-api"]
+	path = cartesi-exchange-api
+	url = https://github.com/orkunkilic/cartesi-exchange-api.git
+[submodule "cartesi-exchange-frontend"]
+	path = cartesi-exchange-frontend
+	url = https://github.com/orkunkilic/cartesi-exchange-frontend.git
